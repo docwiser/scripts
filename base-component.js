@@ -110,7 +110,7 @@ evt: [
 {
 name: 'click',
 callback: () => {
-navigator.clipboard.writeText(copyComponent.states.text).then(() => copyComponent.dispatchEvent('coppyed')).catch((error) => console.error(error));
+navigator.clipboard.writeText(CopyComponent.states.text).then(() => copyComponent.dispatchEvent('coppyed')).catch((error) => console.error(error));
 }
 }
 ]
