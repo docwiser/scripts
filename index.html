@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Peer-to-peer File Transport and Chat</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body>
+<header>
+    <nav>
+        <button id="disconnectbtn" hidden>Disconnect</button>
+        <button id="changepasswordbtn" hidden>Change Password</button>
+    </nav>
+</header>
+<div id="load" hidden>Loading...</div>
+<div id="frame">
+    <h1>File Transport & Chat</h1>
+    <p>Securely share files and chat with ease.</p>
+    <form id="myform">
+        <label for="mypeerid">Enter Password or Auto-generate:</label>
+        <input type="text" id="mypeerid" minlength="6" maxlength="16" required>
+        <button id="generatepassword">Generate Password</button>
+        <input type="submit" value="Connect">
+    </form>
+    <div id="connection" hidden>
+        <h2>Connected with the server</h2>
+        <p>Share your password with others to connect:</p>
+        <p id="cpassword"></p>
+        <button id="uploadbtn" disabled>Upload File</button>
+        <input type="file" id="uploadfile" hidden>
+        <div id="receivefile" hidden>
+            <h2>File request</h2>
+            <p>Do you want to download this file?</p>
+            <div id="fileinfo"></div>
+            <button id="downloadbtn">Download</button>
+        </div>
+        <form id="otherform">
+            <label for="otherpeerid">Enter Other's Password:</label>
+            <input type="text" id="otherpeerid" minlength="6" maxlength="16" required>
+            <input type="submit" value="Connect">
+        </form>
+        <div id="chat" hidden>
+            <h2>Chat</h2>
+            <textarea id="chatbox" readonly></textarea>
+            <input type="text" id="chatinput" placeholder="Type a message">
+            <button id="sendbtn">Send</button>
+            <button id="voicemsgbtn">Send Voice</button>
+        </div>
+    </div>
+</div>
+<script>
+let loadingFrame = document.getElementById("load");
+let frame = document.getElementById("frame");
+let myForm = document.getElementById("myform");
+let myPeerID = document.getElementById("mypeerid");
+let generatePassword = document.getElementById("generatepassword");
+let connectionFrame = document.getElementById("connection");
+let currentPassword = document.getElementById("cpassword");
+let uploadBtn = document.getElementById("uploadbtn");
+let uploadFile = document.getElementById("uploadfile");
+let receiveFile = document.getElementById("receivefile");
+let fileInfo = document.getElementById("fileinfo");
+let downloadBtn = document.getElementById("downloadbtn");
+let otherForm = document.getElementById("otherform");
+let otherPeerID = document.getElementById("otherpeerid");
+let chat = document.getElementById("chat");
+let chatBox = document.getElementById("chatbox");
+let chatInput = document.getElementById("chatinput");
+let sendBtn = document.getElementById("sendbtn");
+let voiceMsgBtn = document.getElementById("voicemsgbtn");
+let disconnectBtn = document.getElementById("disconnectbtn");
+let changePasswordBtn = document.getElementById("changepasswordbtn");
+let startAudio = new Audio("start.wav");
+
+function message(content, timer = 3000) {
+    let msg = document.createElement("p");
+    msg.setAttribute("role", "alert");
+    msg.innerHTML = content;
+    document.body.appendChild(msg);
+    setTimeout(() => {
+        msg.remove();
+    }, timer);
+}
+
+generatePassword.addEventListener("click", (e) => {
+    e.preventDefault();
+    myPeerID.value = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+});
+
+myForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    window.peer = new Peer(myPeerID.value.trim());
+    peer.on('open', (id) => {
+        myForm.hidden = true;
+        currentPassword.innerHTML = `My Password: ${id}`;
+        connectionFrame.hidden = false;
+        disconnectBtn.hidden = false;
+        changePasswordBtn.hidden = false;
+        initialize(peer);
+        message("Connected Successfully");
+    });
+});
+
+function initialize(peer) {
+    peer.on('connection', (con) => {
+        window.con = con;
+        startAudio.play();
+        message("Connected with other party");
+        uploadBtn.disabled = false;
+        otherForm.hidden = true;
+        chat.hidden = false;
+        enableCommunication();
+    });
+}
+
+otherForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    window.con = window.peer.connect(otherPeerID.value.trim());
+    window.con.on('open', () => {
+        startAudio.play();
+        message("Connected to the other party");
+        uploadBtn.disabled = false;
+        otherForm.hidden = true;
+        chat.hidden = false;
+        enableCommunication();
+    });
+    window.con.on('data', handleIncomingData);
+});
+
+function enableCommunication() {
+    window.isSend = true;
+    window.con.on('data', handleIncomingData);
+    sendBtn.addEventListener("click", () => {
+        let text = chatInput.value.trim();
+        if (text) {
+            window.con.send({ type: 'text', text });
+            appendChatMessage("Me: " + text);
+            chatInput.value = "";
+        }
+    });
+    voiceMsgBtn.addEventListener("click", () => {
+        navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+            let recorder = new MediaRecorder(stream);
+            recorder.ondataavailable = (e) => {
+                window.con.send({ type: 'voice', data: e.data });
+                message("Voice message sent");
+            };
+            recorder.start();
+            setTimeout(() => recorder.stop(), 3000);
+        });
+    });
+}
+
+function appendChatMessage(msg) {
+    chatBox.value += msg + "\n";
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+function handleIncomingData(data) {
+    if (data.type === 'text') {
+        appendChatMessage("Other: " + data.text);
+    } else if (data.type === 'voice') {
+        let audio = new Audio(URL.createObjectURL(new Blob([data.data])));
+        audio.play();
+    } else if (data.fileName && data.fileData) {
+        receiveFile.hidden = false;
+        fileInfo.innerHTML = `File: ${data.fileName} <br> Size: ${(data.fileSize / (1024 * 1024)).toFixed(2)} MB`;
+        downloadBtn.onclick = () => {
+            let a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob([data.fileData], { type: data.fileType }));
+            a.download = data.fileName;
+            a.click();
+            message("File downloaded successfully");
+        };
+    }
+}
+
+uploadBtn.addEventListener("click", () => {
+    uploadFile.click();
+});
+
+uploadFile.addEventListener("change", () => {
+    if (window.isSend && uploadFile.files.length > 0) {
+        let file = uploadFile.files[0];
+        window.con.send({
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            fileData: file
+        });
+        message("File sent successfully");
+    }
+});
+
+disconnectBtn.addEventListener("click", () => {
+    if (window.peer) {
+        window.peer.destroy();
+        location.reload();
+    }
+});
+
+changePasswordBtn.addEventListener("click", () => {
+    location.reload();
+});
+</script>
+</body>
+</html>
